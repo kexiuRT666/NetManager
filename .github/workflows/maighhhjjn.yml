@@ -1,0 +1,97 @@
+name: 🔨 Build & Release NetManager FOSS .APK
+
+on:
+  push:
+    branches: [ main ]
+    tags: [ 'v*.*.*' ]
+
+permissions:
+  contents: write
+  actions: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 📁 Checkout
+        uses: actions/checkout@v7.0.1
+
+      - name: 📋 Cache Flutter
+        uses: actions/cache@v6.1.0
+        with:
+          path: ~/.pub-cache
+          key: ${{ runner.os }}-pub-${{ hashFiles('**/pubspec.yaml') }}
+          restore-keys: ${{ runner.os }}-pub-
+
+      - name: 📋 Cache Gradle
+        uses: actions/cache@v6.1.0
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
+          restore-keys: |
+            ${{ runner.os }}-gradle-
+
+      - name: ☕️ Java
+        uses: actions/setup-java@v6.0.1
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: 🦋 Setup Flutter
+        uses: subosito/flutter-action@v2.23.0
+        with:
+          channel: stable
+          flutter-version: 3.47.5
+
+      - name: ⌚ Timestamps
+        run: |
+          echo "SOURCE_DATE_EPOCH=$(git log -1 --pretty=%ct)" >> "$GITHUB_ENV"
+
+      - name: 🪛 Dependencies
+        run: |
+          rm -rf android/wear
+          sed -i '/:wear/d' android/settings.gradle.kts
+          export PUB_CACHE=$(pwd)/.pub-cache
+          flutter config --no-analytics
+          flutter pub get --enforce-lockfile
+
+      - name: ✅ Tests
+        run: flutter test --coverage
+
+      - name: 🔓 Key.properties
+        run: echo "${{ secrets.KEY_PROPERTIES }}" > $GITHUB_WORKSPACE/android/key.properties
+
+      - name: 🗄️ Upload-keystore.jks
+        run: echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > $GITHUB_WORKSPACE/android/upload-keystore.jks
+
+      - name: 📝 Define GIT_COMMIT
+        run: echo "GIT_COMMIT=$(git rev-parse --short=7 HEAD)" >> $GITHUB_ENV
+
+      - name: ⛏️ App APK (Android without proprietary libraries)
+        run: |
+          export PUB_CACHE=$(pwd)/.pub-cache
+          flutter build apk --release --flavor foss --extra-gen-snapshot-options=--strip --dart-define=SENTRY_DSN=${{ secrets.SENTRY_DSN_FOSS }} --dart-define=flutter.flutter_map.unblockOSM="${{ secrets.UNBLOCK_OSM }}" --dart-define=GIT_COMMIT=$GIT_COMMIT --target-platform android-arm,android-arm64 --split-per-abi
+
+      - name: ✔️ Validate Gradle wrapper
+        uses: gradle/actions/wrapper-validation@v3
+
+      - name: 📦 Artifacts
+        run: |
+          mkdir -p artifacts
+          cp build/app/outputs/flutter-apk/*.apk artifacts/
+          mv artifacts/app-armeabi-v7a-foss-release.apk artifacts/NetManager-FOSS-v7a.apk
+          mv artifacts/app-arm64-v8a-foss-release.apk artifacts/NetManager-FOSS-arm64.apk
+          mv artifacts/app-foss-release.apk artifacts/NetManager-FOSS.apk
+
+      - name: 📤 Upload
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          path: artifacts/*.apk
+          retention-days: 3
