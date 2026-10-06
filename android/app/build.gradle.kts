@@ -72,17 +72,17 @@ android {
     }
 
     signingConfigs {
-        create("release") {
-            if(keystorePropertiesFileExists) {
-                keyAlias = keystoreProperties["keyAlias"] as String
-                keyPassword = keystoreProperties["keyPassword"] as String
-                storeFile = keystoreProperties["storeFile"]?.let { file(it) }
-                storePassword = keystoreProperties["storePassword"] as String
-            } else {
-                initWith(getByName("debug"))
-            }
+    create("release") {
+        if(keystorePropertiesFileExists) {
+            keyAlias = keystoreProperties["keyAlias"] as String
+            keyPassword = keystoreProperties["keyPassword"] as String
+            storeFile = keystoreProperties["storeFile"]?.let { file(it) }
+            storePassword = keystoreProperties["storePassword"] as String
+        } else {
+            initWith(getByName("debug"))
         }
     }
+}
 
     buildTypes {
         release {
